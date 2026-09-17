@@ -1,10 +1,12 @@
 import json, os, subprocess, hashlib, pathlib
+from registry_loader import load_registry
 
 PREFERRED=['/generate','/chat','/predict','/respond','/infer','/run']
 role=os.getenv('ROLE','UNKNOWN_ROLE')
 model=os.getenv('MODEL','huggingface-projects/llama-3.2-3B-Instruct')
 mission=pathlib.Path('MISSION.md').read_text(encoding='utf-8')
-prompt=f"You are {role} in CEREBRON Omega Farm 37 Experiment & Test Design.\n{mission}\nReturn a concise, auditable design. Do not present a simulation as a test or an unexecuted protocol as evidence."
+registry_context, registry_state = load_registry(['constitution','disciplines','keys','banks'])
+prompt=f"You are {role} in CEREBRON Omega Farm 37 Experiment & Test Design.\n{mission}\n\nShared CEREBRON registry context (guidance only; not self-certifying evidence):\n{registry_context}\n\nReturn a concise, auditable design. Do not present a simulation as a test or an unexecuted protocol as evidence."
 
 def run(cmd,timeout=240):
     return subprocess.run(cmd,capture_output=True,text=True,timeout=timeout)
@@ -49,13 +51,12 @@ def invoke(space,prompt):
         pred=run(['hf-gradio','predict',space,ep,json.dumps(payload,ensure_ascii=False)],240)
         if pred.returncode==0 and pred.stdout.strip():
             text=extract(pred.stdout)
-            if text:
-                return True,text,{'endpoint':ep,'sha256':hashlib.sha256(text.encode()).hexdigest()}
+            if text: return True,text,{'endpoint':ep,'sha256':hashlib.sha256(text.encode()).hexdigest()}
         errors.append(f'{ep}:{pred.stderr.strip() or pred.stdout.strip()}')
     return False,None,{'error':' | '.join(errors)[-6000:]}
 
 ok,text,meta=invoke(model,prompt)
-out={'farm':37,'role':role,'model':model,'provider':'huggingface-space-zerogpu','inference_success':ok,'status':'UNREVIEWED_EXTERNAL_AGENT_OUTPUT' if ok else 'EXTERNAL_INFERENCE_FAILED','output':text,**meta}
+out={'farm':37,'role':role,'model':model,'provider':'huggingface-space-zerogpu','inference_success':ok,'status':'UNREVIEWED_EXTERNAL_AGENT_OUTPUT' if ok else 'EXTERNAL_INFERENCE_FAILED','output':text,'registry_runtime':registry_state,**meta}
 pathlib.Path('results').mkdir(exist_ok=True)
 pathlib.Path(f'results/{role}.json').write_text(json.dumps(out,ensure_ascii=False,indent=2),encoding='utf-8')
-print(json.dumps({k:out.get(k) for k in ('role','model','status','inference_success','endpoint')},ensure_ascii=False))
+print(json.dumps({'role':role,'model':model,'status':out['status'],'inference_success':ok,'registry_runtime':registry_state},ensure_ascii=False))
