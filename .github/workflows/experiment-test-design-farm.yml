@@ -1,0 +1,80 @@
+name: CEREBRON Farm 37 Experiment Test Design
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  agents:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - {role: HYPOTHESIS_TEST_ARCHITECT, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: EXPERIMENTAL_DESIGN_SPECIALIST, model: huggingface-projects/gemma-2-9b-it}
+          - {role: CONTROL_GROUP_SPECIALIST, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: MEASUREMENT_METROLOGY_SPECIALIST, model: huggingface-projects/gemma-2-9b-it}
+          - {role: INSTRUMENTATION_SPECIALIST, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: STATISTICAL_POWER_SPECIALIST, model: huggingface-projects/gemma-2-9b-it}
+          - {role: RANDOMIZATION_BLINDING_SPECIALIST, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: CONFOUNDING_BIAS_AUDITOR, model: huggingface-projects/gemma-2-9b-it}
+          - {role: PASS_FAIL_CRITERIA_ENGINEER, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: FALSIFICATION_TEST_DESIGNER, model: huggingface-projects/gemma-2-9b-it}
+          - {role: STRESS_TEST_DESIGNER, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: EDGE_CASE_TEST_DESIGNER, model: huggingface-projects/gemma-2-9b-it}
+          - {role: SAFETY_TEST_SPECIALIST, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: RELIABILITY_TEST_SPECIALIST, model: huggingface-projects/gemma-2-9b-it}
+          - {role: FIELD_VALIDATION_SPECIALIST, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: REPRODUCIBILITY_SPECIALIST, model: huggingface-projects/gemma-2-9b-it}
+          - {role: NEGATIVE_RESULT_AUDITOR, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: EXPERIMENT_RED_TEAM, model: huggingface-projects/gemma-2-9b-it}
+          - {role: INDEPENDENT_TEST_REVIEWER, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: OMEGA_EXPERIMENT_TEST_JUDGE, model: huggingface-projects/gemma-2-9b-it}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -q hf-gradio
+      - name: Run real external model worker
+        env:
+          ROLE: ${{ matrix.role }}
+          MODEL: ${{ matrix.model }}
+        run: python worker/agent.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: farm37-${{ matrix.role }}
+          path: results/*.json
+
+  omega:
+    if: always()
+    needs: agents
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: farm37-*
+          path: collected
+          merge-multiple: true
+      - name: Build Omega evidence packet
+        run: |
+          python - <<'PY'
+          import glob,json,os
+          rows=[]
+          for p in glob.glob('collected/*.json'):
+              try: rows.append(json.load(open(p,encoding='utf-8')))
+              except Exception as e: rows.append({'file':p,'status':'ARTIFACT_PARSE_FAILED','error':repr(e)})
+          successes=[r for r in rows if r.get('inference_success') is True and r.get('status')=='UNREVIEWED_EXTERNAL_AGENT_OUTPUT']
+          packet={'farm':37,'name':'Experiment & Test Design','roles_expected':20,'roles_returned':len(rows),'successful_external_ai_calls':len(successes),'failed_external_ai_calls':len(rows)-len(successes),'all_external_calls_verified_successful':len(rows)==20 and len(successes)==20,'rules':['CLAIM<=EVIDENCE','SIMULATION!=TEST','PROTOCOL!=EXECUTED_EVIDENCE','UNKNOWN REMAINS UNKNOWN','VERIFY BEFORE COMMIT'],'results':rows}
+          os.makedirs('omega',exist_ok=True)
+          json.dump(packet,open('omega/farm37-omega.json','w',encoding='utf-8'),ensure_ascii=False,indent=2)
+          print(json.dumps({k:v for k,v in packet.items() if k!='results'},indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: experiment-test-design-farm-37-omega-packet
+          path: omega/farm37-omega.json
